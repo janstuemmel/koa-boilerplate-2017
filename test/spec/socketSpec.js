@@ -1,48 +1,76 @@
 const socketClient = require('socket.io-client');
-const socketio = require('socket.io');
+const createTestServer = require('testtp');
 
 const { map, keys } = require('lodash');
 
-const sockOpt = {
+const app = require('../../app');
+
+const SOCK_OPT = {
   reconnection: false
 };
 
 describe('socket tests', () => {
 
-  let client1, client2, address;
-  let io;
+  let client1, client2, test;
 
-  beforeEach( async (done) => {
+  beforeEach( async () => {
 
-
-    // find a free port
-    var port = await require('detect-port')(5000);
-    address = ['http://0.0.0.0', port].join(':');
-
-    // establish socket server
-    io = socketio(port);
-    io.on('connection', require('../../app/socket')(io));
+    test = await createTestServer(app.server);
 
     // connect clients
-    client1 = socketClient(address, sockOpt);
-    client2 = socketClient(address, sockOpt);
+    client1 = socketClient(test.url, SOCK_OPT);
+    client2 = socketClient(test.url, SOCK_OPT);
+  });
 
-    // wait for connection
-    client1.once('connect', () => client2.once('connect', done));
+  afterEach(() => {
+    client2.close();
+    client1.close();
   });
 
 
-  afterEach((done) => {
-    jest.resetModules()
-    io.close(done);
+  it('should have 2 connected sockets', (done) => {
+
+    client1.once('connect', () => {
+
+      client2.once('connect', () => {
+
+        // then
+        expect(keys(app.io.sockets.connected)).toHaveLength(2);
+        done();
+      });
+    });
+
   });
 
-  it('should have 2 connected sockets', () => {
 
-    // then
-    expect(keys(io.sockets.connected)).toHaveLength(2);
+  it('should join a room', (done) => {
 
+    // given
+    client1.once('joined_room', () => {
+
+      // then
+      done()
+    });
+
+    // when
+    client1.emit('join_room', 'testRoom');
   });
 
+
+  it('should receive a message', (done) => {
+
+    // given
+    client1.once('message', data => {
+
+      // then
+      expect(data.msg).toBe('testMsg');
+      done();
+    });
+
+    // when
+    client1.emit('join_room', 'testRoom');
+    client2.emit('join_room', 'testRoom');
+    client2.emit('message', 'testMsg');
+  });
 
 });

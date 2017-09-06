@@ -1,37 +1,40 @@
 const socketClient = require('socket.io-client');
+const createTestServer = require('testtp');
+
+const { keys } = require('lodash');
+
 const app = require('../../app');
 
-const fetch = require('node-fetch');
+const SOCK_OPT = {
+  reconnection: false
+};
 
 describe('basic tests', () => {
 
-  let server, path, client;
+  var test, client;
 
-  beforeAll(async () => {
+  beforeEach( async (done) => {
 
-    // detect a free port
-    const port = await require('detect-port')(5000);
-    const address = [ 'http://0.0.0.0', port ].join(':');
-    path = (p) => [ address, p ].join('');
+    test = await createTestServer(app.server);
 
-    // listen to server
-    server = app.listen(port);
+    // connect a socket io client
+    client = socketClient.connect(test.url, SOCK_OPT);
 
-    // connect socketio clients
-    client = socketClient.connect(address);
+    // wait for client connection
+    client.once('connect', done);
   });
 
 
-  afterAll(() => {
-    // close server, release port
-    server.close();
+  afterEach(done => {
+    client.once('disconnect', () => test.close(done));
+    client.close();
   });
 
 
   it('should get /', async () => {
 
     // given
-    var res = await fetch(path('/'));
+    var res = await test.get('/api');
 
     // when
     var text = await res.text();
@@ -45,15 +48,15 @@ describe('basic tests', () => {
   it('should emit socket.io event on /', async (done) => {
 
     // given
-    const spy = jest.fn(done);
-    client.on('route_root', spy);
+    client.on('route', data => {
+
+      // then
+      expect(data).toEqual('api');
+      done();
+    });
 
     // when
-    await fetch(path('/'));
-
-    // then
-    expect(spy).toHaveBeenCalled();
-    expect(spy.mock.instances[0]).toBe(client);
+    var res = await test.get('/api');
   });
 
 });
